@@ -1,0 +1,43 @@
+services:
+  mcp-email-server:
+    build:
+      context: .
+    user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    env_file:
+      - .env.example
+    environment:
+      MCP_PORT: "${MCP_PORT:-8000}"
+      LOG_LEVEL: "${LOG_LEVEL:-INFO}"
+      EMAIL_MOCK_MODE: "${EMAIL_MOCK_MODE:-false}"
+      MCP_BEARER_TOKEN: "${MCP_BEARER_TOKEN:-}"
+      SMTP_HOST: "${SMTP_HOST:-maildev}"
+      SMTP_PORT: "${SMTP_PORT:-1025}"
+      SMTP_USERNAME: "${SMTP_USERNAME:-}"
+      SMTP_PASSWORD: "${SMTP_PASSWORD:-}"
+      SMTP_FROM: "${SMTP_FROM:-MCP Server <mcp@example.local>}"
+      SMTP_USE_TLS: "${SMTP_USE_TLS:-false}"
+      SMTP_USE_SSL: "${SMTP_USE_SSL:-false}"
+      SMTP_TIMEOUT: "${SMTP_TIMEOUT:-10}"
+      ALLOWED_RECIPIENT_DOMAIN_REGEX: "${ALLOWED_RECIPIENT_DOMAIN_REGEX:-}"
+    ports:
+      - "${MCP_PORT:-8000}:${MCP_PORT:-8000}"
+    depends_on:
+      - maildev
+
+  maildev:
+    image: soulteary/maildev:latest
+    environment:
+      MAILDEV_SMTP_PORT: "${MAILDEV_SMTP_PORT:-1025}"
+      MAILDEV_WEB_PORT: "${MAILDEV_WEB_PORT:-1080}"
+      MAILDEV_IP: "${MAILDEV_IP:-0.0.0.0}"
+      MAILDEV_WEB_IP: "${MAILDEV_WEB_IP:-0.0.0.0}"
+    ports:
+      - "${MAILDEV_WEB_PORT:-1080}:${MAILDEV_WEB_PORT:-1080}"
+      - "${MAILDEV_SMTP_PORT:-1025}:${MAILDEV_SMTP_PORT:-1025}"
