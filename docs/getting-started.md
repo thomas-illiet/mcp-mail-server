@@ -9,14 +9,14 @@
 ## Install
 
 ```bash
-uv sync --all-groups
-uv run pytest
+make install
+make test
 ```
 
 ## Run Locally
 
 ```bash
-uv run email-mcp
+make start
 ```
 
 Default endpoint:
@@ -28,7 +28,7 @@ http://localhost:8000/mcp
 ## Run With Docker Compose
 
 ```bash
-docker compose up --build
+make compose-up
 ```
 
 Services:
@@ -46,13 +46,4 @@ Services:
 3. Open `http://localhost:1080`.
 4. Inspect the captured message in MailDev.
 
-## Useful Commands
-
-```bash
-uv run ruff format .
-uv run ruff check .
-uv run pytest
-uv run ty check src/
-helm lint charts/email-mcp
-docker compose config
-```
+Development commands are documented in [development.md](development.md).
