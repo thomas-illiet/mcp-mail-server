@@ -1,0 +1,107 @@
+replicaCount: 1
+
+image:
+  repository: email-mcp
+  pullPolicy: IfNotPresent
+  tag: "0.1.0"
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automountServiceAccountToken: false
+
+podAnnotations: {}
+podLabels: {}
+
+config:
+  mcpPort: 8000
+  logLevel: INFO
+  emailMockMode: false
+  allowedRecipientDomainRegex: ""
+
+auth:
+  bearerToken: ""
+
+smtp:
+  host: maildev
+  port: 1025
+  from: "MCP Server <mcp@example.local>"
+  useTLS: false
+  useSSL: false
+  timeout: 10
+  username: ""
+  password: ""
+
+secret:
+  create: true
+  name: ""
+  usernameKey: SMTP_USERNAME
+  passwordKey: SMTP_PASSWORD
+  bearerTokenKey: MCP_BEARER_TOKEN
+
+service:
+  type: ClusterIP
+  port: 80
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: email-mcp.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: 500m
+    memory: 512Mi
+
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  fsGroup: 1000
+  seccompProfile:
+    type: RuntimeDefault
+
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop:
+      - ALL
+
+tmpVolume:
+  sizeLimit: 64Mi
+
+probes:
+  readiness:
+    enabled: true
+    path: /health
+    initialDelaySeconds: 5
+    periodSeconds: 10
+    timeoutSeconds: 5
+    failureThreshold: 3
+  liveness:
+    enabled: true
+    type: tcp
+    initialDelaySeconds: 10
+    periodSeconds: 20
+    timeoutSeconds: 5
+    failureThreshold: 3
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

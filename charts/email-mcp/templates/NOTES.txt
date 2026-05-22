@@ -1,0 +1,29 @@
+Email MCP has been deployed.
+
+MCP endpoint:
+{{- if .Values.ingress.enabled }}
+  https://{{ (index .Values.ingress.hosts 0).host }}/mcp
+{{- else }}
+  kubectl port-forward service/{{ include "email-mcp.fullname" . }} 8000:{{ .Values.service.port }}
+  http://localhost:8000/mcp
+{{- end }}
+
+Health endpoint:
+{{- if .Values.ingress.enabled }}
+  https://{{ (index .Values.ingress.hosts 0).host }}/health
+{{- else }}
+  http://localhost:8000/health
+{{- end }}
+
+Prometheus metrics:
+{{- if .Values.ingress.enabled }}
+  https://{{ (index .Values.ingress.hosts 0).host }}/metrics
+{{- else }}
+  http://localhost:8000/metrics
+{{- end }}
+
+{{- if .Values.auth.bearerToken }}
+
+MCP bearer auth is enabled. Send this header to call /mcp:
+  Authorization: Bearer <value from {{ include "email-mcp.secretName" . }}/{{ .Values.secret.bearerTokenKey }}>
+{{- end }}
