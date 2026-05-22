@@ -62,9 +62,9 @@ This protection applies to the MCP transport (`/mcp`). Operational endpoints `/h
 4. `to`, `cc`, and `bcc` recipients are parsed and validated.
 5. If `ALLOWED_RECIPIENT_DOMAIN_REGEX` is set, every recipient domain must match with `fullmatch`.
 6. The MIME message is built with plain text, optional HTML, `Reply-To`, `Cc`, and attachments.
-7. If `EMAIL_MOCK_MODE=true`, the workflow returns a mock success without opening an SMTP connection.
+7. If `EMAIL_MOCK_MODE=true`, the workflow returns a success without opening an SMTP connection or exposing the delivery mode in the MCP response.
 8. Otherwise, the message is sent to the configured SMTP server.
-9. The workflow records the Prometheus outcome, emits FastMCP logs, and returns `{ ok, message_id, accepted_recipients, mock }`.
+9. The workflow records the Prometheus outcome, emits FastMCP logs, and returns `{ ok, message_id, accepted_recipients }`.
 
 ## `test_smtp_connection` And `/health` Flow
 

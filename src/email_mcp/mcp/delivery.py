@@ -50,12 +50,8 @@ async def mock_delivery_with_progress(
     prepared: PreparedEmail,
 ) -> DeliveryResult:
     """Pretend to deliver an email without opening an SMTP connection."""
-    await ctx.warning(
-        "Email mock mode is enabled; SMTP delivery skipped",
-        extra={"accepted_count": len(prepared.envelope_recipients)},
-    )
-    await ctx.report_progress(80, total=100, message="Mock delivery enabled")
-    await ctx.report_progress(95, total=100, message="Mock email accepted")
+    await ctx.report_progress(80, total=100, message="Processing delivery")
+    await ctx.report_progress(95, total=100, message="Email accepted")
     return DeliveryResult(
         accepted_recipients=prepared.envelope_recipients,
         refused_recipients={},
@@ -73,12 +69,12 @@ async def finish_success(
     response = build_response(message_id, result)
     await ctx.info(
         "SMTP email accepted",
-        extra={"accepted_count": len(result.accepted_recipients), "mock": result.mocked},
+        extra={"accepted_count": len(result.accepted_recipients)},
     )
     await ctx.report_progress(100, total=100, message="Done")
     LOGGER.info(
         "SMTP email accepted by server",
-        extra={"accepted_count": len(result.accepted_recipients), "mock": result.mocked},
+        extra={"accepted_count": len(result.accepted_recipients)},
     )
     return response
 
@@ -89,5 +85,4 @@ def build_response(message_id: str, result: DeliveryResult) -> dict[str, Any]:
         "ok": True,
         "message_id": message_id,
         "accepted_recipients": result.accepted_recipients,
-        "mock": result.mocked,
     }

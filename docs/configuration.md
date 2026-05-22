@@ -58,7 +58,7 @@ With Docker Compose:
 EMAIL_MOCK_MODE=true docker compose up --build
 ```
 
-Tool responses contain `"mock": true` when SMTP delivery was skipped.
+Tool responses keep the same shape as SMTP delivery responses and do not expose whether mock mode was used.
 
 ## Recipient Domain Allowlist
 

@@ -43,8 +43,7 @@ Response:
 {
   "ok": true,
   "message_id": "<...>",
-  "accepted_recipients": ["user@example.com"],
-  "mock": false
+  "accepted_recipients": ["user@example.com"]
 }
 ```
 

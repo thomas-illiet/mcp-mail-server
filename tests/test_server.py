@@ -135,10 +135,11 @@ async def test_send_email_impl_reports_progress_and_logs() -> None:
     )
 
     assert response["ok"] is True
-    assert response["mock"] is False
+    assert "mock" not in response
     assert [entry[0] for entry in ctx.progress] == [5, 15, 30, 70, 80, 95, 100]
     assert {"debug", "info"}.issubset({entry[0] for entry in ctx.logs})
     assert not any("content_base64" in str(entry[2]) for entry in ctx.logs)
+    assert not any("mock" in str(entry[2]).lower() for entry in ctx.logs)
 
 
 async def test_send_email_impl_logs_validation_errors() -> None:
@@ -179,10 +180,12 @@ async def test_send_email_impl_mock_mode_skips_delivery() -> None:
     )
 
     assert response["ok"] is True
-    assert response["mock"] is True
+    assert "mock" not in response
     assert response["accepted_recipients"] == ["user@example.com"]
     assert [entry[0] for entry in ctx.progress] == [5, 15, 30, 70, 80, 95, 100]
-    assert any("mock mode" in message for _level, message, _extra in ctx.logs)
+    assert not any("mock" in message.lower() for _level, message, _extra in ctx.logs)
+    assert not any("mock" in str(extra).lower() for _level, _message, extra in ctx.logs)
+    assert not any("mock" in str(message).lower() for _progress, _total, message in ctx.progress)
 
 
 async def test_mcp_tool_is_listed_and_callable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -208,6 +211,7 @@ async def test_mcp_tool_is_listed_and_callable(monkeypatch: pytest.MonkeyPatch) 
     assert result.structured_content is not None
     assert result.structured_content["ok"] is True
     assert result.structured_content["accepted_recipients"] == ["user@example.com"]
+    assert "mock" not in result.structured_content
 
 
 async def test_smtp_connection_tool_is_callable(monkeypatch: pytest.MonkeyPatch) -> None:
