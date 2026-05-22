@@ -4,41 +4,43 @@
 
 # Email MCP Server
 
-Serveur MCP Python base sur FastMCP pour envoyer des emails via SMTP. Le projet inclut un environnement Docker Compose avec MailDev pour tester les emails sans utiliser un vrai serveur SMTP.
+Python FastMCP server for sending emails through SMTP. The project includes Docker Compose with MailDev for local testing, a rootless container image, Prometheus metrics, optional bearer auth, mock mode, and a Helm chart for Kubernetes or OpenShift.
 
-## Fonctionnalites
+## Features
 
-- Serveur MCP HTTP avec FastMCP.
-- Outil `send_email` avec `to`, `cc`, `bcc`, `reply_to`, texte, HTML et pieces jointes base64.
-- Envoi SMTP configure par variables d'environnement.
-- MailDev en local pour capturer les emails et les consulter dans une interface web.
-- Progress FastMCP pendant l'envoi.
-- Logging FastMCP multi-niveaux : `debug`, `info`, `warning`, `error`.
-- Auth bearer optionnelle sur l'endpoint MCP HTTP.
-- Filtrage optionnel des domaines destinataires par regex.
-- Mock mode pour valider un email sans ouvrir de connexion SMTP.
-- Image Docker rootless, compatible filesystem read-only.
-- Endpoint Prometheus `/metrics` pour les KPI.
+- HTTP MCP server powered by FastMCP.
+- `send_email` tool with `to`, `cc`, `bcc`, `reply_to`, plain text, HTML, and base64 attachments.
+- `test_smtp_connection` tool plus `/health` endpoint for SMTP connectivity checks.
+- SMTP configuration through environment variables.
+- Optional bearer authentication on the MCP HTTP endpoint.
+- Optional recipient domain allowlist with regex support.
+- Mock mode to validate email payloads without opening an SMTP connection.
+- FastMCP progress updates and client logging.
+- Prometheus `/metrics` endpoint for operational KPIs.
+- Docker Compose with MailDev for local email capture.
+- Rootless Docker image designed for read-only filesystems and OpenShift-style hardening.
+- Helm chart with Deployment, Service, Ingress, ConfigMap, Secret, probes, and resource defaults.
 
-## Structure
+## Project Layout
 
 ```text
 src/email_mcp/
-├── config/      # Chargement et validation des variables d'environnement
-├── email/       # Construction MIME, pieces jointes, allowlist et livraison SMTP
-├── mcp/         # Outil FastMCP, progress reporting et logging client
-└── server.py    # Wrapper compatible avec fastmcp inspect/run
+|-- config/          # Environment parsing and validation
+|-- email/           # MIME building, attachments, allowlist, SMTP delivery
+|-- mcp/             # FastMCP tools, auth, progress, client logging
+|-- observability/   # Prometheus metrics
+`-- server.py        # Stable wrapper for fastmcp inspect/run
 ```
 
-La documentation d'architecture detaillee est disponible ici : [docs/architecture.md](docs/architecture.md).
+Architecture documentation: [docs/architecture.md](docs/architecture.md).
 
-La documentation de deploiement Helm/Kubernetes est disponible ici : [docs/helm.md](docs/helm.md).
+Helm and Kubernetes documentation: [docs/helm.md](docs/helm.md).
 
-## Installation locale
+## Local Installation
 
-Prérequis :
+Prerequisites:
 
-- Python 3.11 ou plus recent.
+- Python 3.11 or newer.
 - `uv`.
 
 ```bash
@@ -46,33 +48,37 @@ uv sync --all-groups
 uv run pytest
 ```
 
-Lancer le serveur MCP HTTP localement :
+Start the local MCP HTTP server:
 
 ```bash
 uv run email-mcp
 ```
 
-Par defaut, le serveur ecoute sur `http://localhost:8000/mcp`.
+By default, the server listens on `http://localhost:8000/mcp`.
 
 ## Docker Compose
 
-Demarrer le serveur MCP et MailDev :
+Start the MCP server and MailDev:
 
 ```bash
 docker compose up --build
 ```
 
-Services exposes :
+Exposed services:
 
-- MCP HTTP : `http://localhost:8000/mcp`
-- Health check SMTP : `http://localhost:8000/health`
-- Prometheus metrics : `http://localhost:8000/metrics`
-- MailDev UI : `http://localhost:1080`
-- MailDev SMTP : `localhost:1025`
+- MCP HTTP: `http://localhost:8000/mcp`
+- SMTP health check: `http://localhost:8000/health`
+- Prometheus metrics: `http://localhost:8000/metrics`
+- MailDev UI: `http://localhost:1080`
+- MailDev SMTP: `localhost:1025`
 
-Le service `mcp-email-server` tourne en non-root avec l'utilisateur `appuser` (`1000:1000`). Docker Compose active aussi `read_only: true`, supprime les capabilities Linux et monte `/tmp` en `tmpfs` pour simuler le mode `readOnlyRootFilesystem` attendu sur OpenShift.
+The `mcp-email-server` service runs as the non-root `appuser` user (`1000:1000`). Docker Compose also enables `read_only: true`, drops Linux capabilities, sets `no-new-privileges:true`, and mounts `/tmp` as `tmpfs` to mirror the expected OpenShift `readOnlyRootFilesystem` setup.
 
-Tester avec un client FastMCP :
+## Usage Examples
+
+The examples below assume the server is running at `http://localhost:8000/mcp`.
+
+### Simple Text Email
 
 ```bash
 uv run python - <<'PY'
@@ -84,10 +90,9 @@ async def main():
         result = await client.call_tool(
             "send_email",
             {
-                "to": ["user@example.com"],
-                "subject": "Hello from MCP",
-                "text": "Plain text body",
-                "html": "<p>HTML body</p>",
+                "to": ["alice@example.com"],
+                "subject": "Test message",
+                "text": "Hello Alice, this is a test email.",
             },
         )
         print(result.structured_content)
@@ -96,9 +101,11 @@ asyncio.run(main())
 PY
 ```
 
-Ouvrir ensuite `http://localhost:1080` pour voir l'email capture par MailDev.
+Open `http://localhost:1080` to inspect the email captured by MailDev.
 
-Si `MCP_BEARER_TOKEN` est configure, ajoute une auth bearer cote client :
+### Bearer Auth Client
+
+If `MCP_BEARER_TOKEN` is configured, MCP calls must include bearer authentication:
 
 ```bash
 uv run python - <<'PY'
@@ -118,11 +125,7 @@ asyncio.run(main())
 PY
 ```
 
-## Exemples d'usage
-
-Les exemples suivants supposent que le serveur est demarre sur `http://localhost:8000/mcp`.
-
-### Email texte simple
+### HTML Email With Fallback Text
 
 ```bash
 uv run python - <<'PY'
@@ -135,8 +138,9 @@ async def main():
             "send_email",
             {
                 "to": ["alice@example.com"],
-                "subject": "Message de test",
-                "text": "Bonjour Alice, ceci est un email de test.",
+                "subject": "HTML test",
+                "text": "Fallback text for clients that do not render HTML.",
+                "html": "<h1>Hello Alice</h1><p>This email was sent by MCP.</p>",
             },
         )
         print(result.structured_content)
@@ -145,33 +149,7 @@ asyncio.run(main())
 PY
 ```
 
-### Email HTML avec texte alternatif
-
-```bash
-uv run python - <<'PY'
-import asyncio
-from fastmcp import Client
-
-async def main():
-    async with Client("http://localhost:8000/mcp") as client:
-        result = await client.call_tool(
-            "send_email",
-            {
-                "to": ["alice@example.com"],
-                "subject": "Rapport hebdomadaire",
-                "text": "Le rapport hebdomadaire est disponible.",
-                "html": "<h1>Rapport hebdomadaire</h1><p>Le rapport est disponible.</p>",
-            },
-        )
-        print(result.structured_content)
-
-asyncio.run(main())
-PY
-```
-
-### CC, BCC et Reply-To
-
-`bcc` est utilise pour l'enveloppe SMTP, mais n'est jamais ajoute aux headers visibles du message.
+### CC, BCC, And Reply-To
 
 ```bash
 uv run python - <<'PY'
@@ -187,8 +165,8 @@ async def main():
                 "cc": ["team@example.com"],
                 "bcc": ["audit@example.com"],
                 "reply_to": "support@example.com",
-                "subject": "Suivi projet",
-                "text": "Voici un point de suivi.",
+                "subject": "Visible and hidden recipients",
+                "text": "BCC is used only in the SMTP envelope.",
             },
         )
         print(result.structured_content)
@@ -197,7 +175,9 @@ asyncio.run(main())
 PY
 ```
 
-### Piece jointe base64
+`bcc` recipients are part of the SMTP envelope but are never added to visible MIME headers.
+
+### Base64 Attachment
 
 ```bash
 uv run python - <<'PY'
@@ -206,20 +186,20 @@ import base64
 from fastmcp import Client
 
 async def main():
-    content = base64.b64encode(b"Hello from an attachment\n").decode()
+    content = base64.b64encode(b"hello from an attachment\n").decode()
     async with Client("http://localhost:8000/mcp") as client:
         result = await client.call_tool(
             "send_email",
             {
                 "to": ["alice@example.com"],
-                "subject": "Piece jointe",
-                "text": "Le fichier est en piece jointe.",
+                "subject": "Attachment",
+                "text": "The file is attached.",
                 "attachments": [
                     {
                         "filename": "hello.txt",
                         "content_base64": content,
                         "mime_type": "text/plain",
-                    }
+                    },
                 ],
             },
         )
@@ -229,79 +209,53 @@ asyncio.run(main())
 PY
 ```
 
-### Mock mode sans envoi SMTP
+### Mock Mode
+
+Mock mode validates the full request but skips SMTP delivery:
 
 ```bash
 EMAIL_MOCK_MODE=true uv run email-mcp
 ```
 
-Puis appeler l'outil normalement. La reponse contient `"mock": true` et aucune connexion SMTP n'est ouverte.
+With Docker Compose:
 
-```json
-{
-  "ok": true,
-  "message_id": "<...>",
-  "accepted_recipients": ["alice@example.com"],
-  "mock": true
-}
+```bash
+EMAIL_MOCK_MODE=true docker compose up --build
 ```
 
-### Allowlist de domaines
+The tool response contains `"mock": true` when SMTP delivery was skipped.
 
-Autoriser uniquement `example.com` et les sous-domaines de `example.org` :
+### Domain Allowlist
+
+Allow only `example.com` and subdomains of `example.org`:
 
 ```bash
 ALLOWED_RECIPIENT_DOMAIN_REGEX='^(example\.com|.+\.example\.org)$' uv run email-mcp
 ```
 
-Avec cette configuration :
+With this configuration:
 
-- `alice@example.com` passe.
-- `ops@team.example.org` passe.
-- `user@blocked.test` est refuse avant l'envoi SMTP.
+- `user@example.com` is allowed.
+- `user@team.example.org` is allowed.
+- `user@blocked.test` is rejected before SMTP delivery.
 
-### Progress handler FastMCP
+### SMTP Connection Test
 
 ```bash
 uv run python - <<'PY'
 import asyncio
 from fastmcp import Client
 
-async def progress_handler(progress, total, message):
-    print(f"progress={progress}/{total} message={message}")
-
 async def main():
     async with Client("http://localhost:8000/mcp") as client:
-        result = await client.call_tool(
-            "send_email",
-            {
-                "to": ["alice@example.com"],
-                "subject": "Avec progress",
-                "text": "Le client affiche les etapes d'envoi.",
-            },
-            progress_handler=progress_handler,
-        )
+        result = await client.call_tool("test_smtp_connection", {})
         print(result.structured_content)
 
 asyncio.run(main())
 PY
 ```
 
-### Metrics Prometheus
-
-```bash
-curl http://localhost:8000/metrics | grep email_mcp_email_send
-```
-
-### Health check SMTP
-
-`/health` fait le meme test que l'outil MCP `test_smtp_connection` : chargement de la configuration SMTP, ouverture de connexion, STARTTLS si configure, login si configure, puis `NOOP`.
-
-```bash
-curl -i http://localhost:8000/health
-```
-
-Reponse OK :
+Example response:
 
 ```json
 {
@@ -316,76 +270,82 @@ Reponse OK :
 }
 ```
 
-Le endpoint retourne `200` si la connexion SMTP reussit et `503` si la configuration ou la connexion echoue.
+### Health Endpoint
 
-### Verification dans MailDev
-
-Apres un envoi non mocke avec Docker Compose :
+`/health` runs the same connectivity check as `test_smtp_connection`: configuration loading, SMTP or SMTP SSL connection, optional STARTTLS, optional login, then `NOOP`.
 
 ```bash
-open http://localhost:1080
+curl -i http://localhost:8000/health
 ```
 
-Ou ouvre manuellement `http://localhost:1080` dans ton navigateur.
+The endpoint returns `200` when SMTP connectivity succeeds and `503` when configuration or connectivity fails. Mock mode does not bypass this check.
+
+### Prometheus Metrics
+
+```bash
+curl http://localhost:8000/metrics | grep email_mcp_email_send
+```
+
+After a non-mock send through Docker Compose, this exposes counters and histograms for send attempts, outcomes, duration, recipient counts, and attachment counts.
 
 ## Configuration
 
-Copier l'exemple si tu veux personnaliser la configuration :
+Copy the example environment file if you want to customize settings:
 
 ```bash
 cp .env.example .env
 ```
 
-Variables principales :
+Main variables:
 
-| Variable | Defaut | Description |
+| Variable | Default | Description |
 | --- | --- | --- |
-| `MCP_PORT` | `8000` | Port HTTP du serveur MCP. |
-| `LOG_LEVEL` | `INFO` | Niveau des logs serveur Python. |
-| `EMAIL_MOCK_MODE` | `false` | Si `true`, valide l'email mais n'envoie rien via SMTP. |
-| `MCP_BEARER_TOKEN` | vide | Token bearer optionnel requis sur l'endpoint MCP HTTP quand il est defini. |
-| `SMTP_HOST` | `maildev` | Hote SMTP. |
-| `SMTP_PORT` | `1025` | Port SMTP. |
-| `SMTP_USERNAME` | vide | Utilisateur SMTP optionnel. |
-| `SMTP_PASSWORD` | vide | Mot de passe SMTP optionnel. |
-| `SMTP_FROM` | `MCP Server <mcp@example.local>` | Adresse expediteur. |
-| `SMTP_USE_TLS` | `false` | Active STARTTLS. |
-| `SMTP_USE_SSL` | `false` | Active SMTP over SSL. |
-| `SMTP_TIMEOUT` | `10` | Timeout SMTP en secondes. |
-| `ALLOWED_RECIPIENT_DOMAIN_REGEX` | vide | Regex optionnelle pour autoriser les domaines destinataires. |
+| `MCP_PORT` | `8000` | HTTP port for the MCP server. |
+| `LOG_LEVEL` | `INFO` | Python server log level. |
+| `EMAIL_MOCK_MODE` | `false` | If `true`, validate the email request but skip SMTP delivery. |
+| `MCP_BEARER_TOKEN` | empty | Optional bearer token required on the MCP HTTP endpoint when set. |
+| `SMTP_HOST` | `maildev` | SMTP host. |
+| `SMTP_PORT` | `1025` | SMTP port. |
+| `SMTP_USERNAME` | empty | Optional SMTP username. |
+| `SMTP_PASSWORD` | empty | Optional SMTP password. |
+| `SMTP_FROM` | `MCP Server <mcp@example.local>` | Sender address. |
+| `SMTP_USE_TLS` | `false` | Enable STARTTLS. |
+| `SMTP_USE_SSL` | `false` | Enable SMTP over SSL. |
+| `SMTP_TIMEOUT` | `10` | SMTP timeout in seconds. |
+| `ALLOWED_RECIPIENT_DOMAIN_REGEX` | empty | Optional regex for allowed recipient domains. |
 
-`SMTP_USE_TLS=true` et `SMTP_USE_SSL=true` ne peuvent pas etre utilises ensemble.
+`SMTP_USE_TLS=true` and `SMTP_USE_SSL=true` cannot be used together.
 
-## Auth bearer MCP
+## MCP Bearer Auth
 
-Par defaut, `MCP_BEARER_TOKEN` est vide et l'endpoint MCP reste accessible sans authentification.
+By default, `MCP_BEARER_TOKEN` is empty and the MCP endpoint is available without authentication.
 
-Quand `MCP_BEARER_TOKEN` est defini, les appels HTTP sur `/mcp` doivent fournir :
+When `MCP_BEARER_TOKEN` is set, HTTP calls to `/mcp` must include:
 
 ```http
 Authorization: Bearer <MCP_BEARER_TOKEN>
 ```
 
-Exemple local :
+Local example:
 
 ```bash
 MCP_BEARER_TOKEN=change-me uv run email-mcp
 ```
 
-Les endpoints `/health` et `/metrics` restent non proteges afin de fonctionner simplement avec les probes Kubernetes et Prometheus.
+The `/health` and `/metrics` endpoints intentionally remain unauthenticated so Kubernetes probes and Prometheus scraping can work without extra wiring.
 
-## Securite conteneur et OpenShift
+## Container Security And OpenShift
 
-L'image Docker est construite pour un runtime non-root :
+The Docker image is built for a non-root runtime:
 
-- utilisateur Linux `appuser`
+- Linux user `appuser`
 - UID/GID `1000:1000`
-- commande runtime directe : `/app/.venv/bin/email-mcp`
-- pas de `uv run` au demarrage du conteneur
+- direct runtime command: `/app/.venv/bin/email-mcp`
+- no `uv run` at container startup
 - `PYTHONDONTWRITEBYTECODE=1`
-- `HOME=/tmp` et `TMPDIR=/tmp`
+- `HOME=/tmp` and `TMPDIR=/tmp`
 
-Pour OpenShift, configurer le workload avec un filesystem read-only et un volume temporaire sur `/tmp` :
+For OpenShift, configure the workload with a read-only filesystem and a temporary `/tmp` volume:
 
 ```yaml
 securityContext:
@@ -405,56 +365,18 @@ volumes:
     emptyDir: {}
 ```
 
-Si ton cluster OpenShift impose des UID aleatoires via une SCC restrictive, il faudra adapter la politique de securite ou rendre le deploiement compatible avec un UID arbitraire. La configuration actuelle suit la contrainte explicite `appuser` UID `1000`.
+If your OpenShift cluster enforces arbitrary UIDs through a restrictive SCC, either adjust the security policy or evolve the image to support arbitrary UIDs instead of the explicit `appuser` UID `1000` constraint.
 
-## Mock mode
+## MCP API
 
-Activer `EMAIL_MOCK_MODE=true` permet de tester l'outil sans envoyer d'email. Le serveur continue de valider les destinataires, l'allowlist regex, le contenu et les pieces jointes, puis retourne une reponse de succes sans ouvrir de connexion SMTP.
-
-Exemple :
-
-```bash
-EMAIL_MOCK_MODE=true uv run email-mcp
-```
-
-En Docker Compose :
-
-```bash
-EMAIL_MOCK_MODE=true docker compose up --build
-```
-
-La reponse contient `"mock": true` quand l'envoi SMTP a ete saute.
-
-## Filtrage des domaines
-
-Si `ALLOWED_RECIPIENT_DOMAIN_REGEX` est vide, tous les domaines destinataires sont autorises.
-
-Si la variable est definie, chaque domaine des champs `to`, `cc` et `bcc` doit matcher la regex avec `re.fullmatch(..., re.IGNORECASE)`. Le matching se fait sur le domaine seul, pas sur l'adresse complete.
-
-Exemple :
-
-```env
-ALLOWED_RECIPIENT_DOMAIN_REGEX=^(example\.com|.+\.example\.org)$
-```
-
-Avec cette configuration :
-
-- `user@example.com` est autorise.
-- `user@team.example.org` est autorise.
-- `user@blocked.test` est refuse.
-
-`reply_to` et `SMTP_FROM` ne sont pas filtres par cette allowlist.
-
-## API MCP
-
-Outils :
+Available tools:
 
 - `send_email`
 - `test_smtp_connection`
 
 ### `send_email`
 
-Parametres :
+Parameters:
 
 - `to: list[str]`
 - `subject: str`
@@ -465,7 +387,7 @@ Parametres :
 - `reply_to: str | None`
 - `attachments: list[{ filename, content_base64, mime_type? }] | None`
 
-Exemple avec piece jointe :
+Attachment example:
 
 ```json
 {
@@ -482,7 +404,7 @@ Exemple avec piece jointe :
 }
 ```
 
-Reponse :
+Response:
 
 ```json
 {
@@ -495,94 +417,48 @@ Reponse :
 
 ### `test_smtp_connection`
 
-Teste la connexion SMTP configuree sans envoyer d'email. Le mock mode ne court-circuite pas ce test.
+Tests the configured SMTP connection without sending an email. Mock mode does not short-circuit this tool.
 
-```bash
-uv run python - <<'PY'
-import asyncio
-from fastmcp import Client
+## Progress And FastMCP Logging
 
-async def main():
-    async with Client("http://localhost:8000/mcp") as client:
-        result = await client.call_tool("test_smtp_connection", {})
-        print(result.structured_content)
+`send_email` reports progress with `ctx.report_progress(..., total=100)`:
 
-asyncio.run(main())
-PY
-```
+- configuration loaded
+- recipients validated
+- MIME body built
+- attachments processed
+- SMTP connection started
+- email sent
+- response built
 
-Reponse :
+Client logs use multiple levels:
 
-```json
-{
-  "ok": true,
-  "smtp_host": "maildev",
-  "smtp_port": 1025,
-  "smtp_use_tls": false,
-  "smtp_use_ssl": false,
-  "authenticated": false,
-  "error_type": null,
-  "error": null
-}
-```
+- `debug` for non-sensitive internal steps.
+- `info` for normal milestones.
+- `warning` for recoverable situations.
+- `error` for validation, regex, base64, or SMTP failures.
 
-## Progress et logging FastMCP
+Structured logs do not include `SMTP_PASSWORD`, `MCP_BEARER_TOKEN`, email bodies, or base64 attachment contents.
 
-`send_email` envoie des updates de progression via `ctx.report_progress(..., total=100)` :
+## Metrics
 
-- configuration chargee
-- destinataires valides
-- corps email construit
-- pieces jointes traitees
-- connexion SMTP
-- email envoye
-- reponse construite
-
-Les logs MCP utilisent plusieurs niveaux :
-
-- `debug` pour les etapes internes non sensibles.
-- `info` pour les etapes normales.
-- `warning` pour les situations recuperables.
-- `error` pour les erreurs de validation, regex, base64 ou SMTP.
-
-Les logs structures n'incluent pas le mot de passe SMTP, le corps du mail, ni le contenu base64 des pieces jointes.
-
-## Metrics Prometheus
-
-Le serveur expose un endpoint Prometheus sur le meme port HTTP que MCP :
+The server exposes Prometheus metrics on the same HTTP port as MCP:
 
 ```text
 GET /metrics
 ```
 
-Exemple local :
+Business KPIs:
 
-```bash
-curl http://localhost:8000/metrics
-```
+- `email_mcp_email_send_attempts_total`: number of `send_email` calls, labeled by `mode`.
+- `email_mcp_email_send_results_total`: terminal outcomes, labeled by `mode` and `result`.
+- `email_mcp_email_send_duration_seconds`: send duration histogram.
+- `email_mcp_email_recipients_per_send`: recipient count histogram.
+- `email_mcp_email_attachments_per_send`: attachment count histogram.
 
-KPI exposes :
+Labels:
 
-- `email_mcp_email_send_attempts_total` : nombre d'appels `send_email`, label `mode`.
-- `email_mcp_email_send_results_total` : resultats par `mode` et `result`.
-- `email_mcp_email_send_duration_seconds` : duree des appels par `mode` et `result`.
-- `email_mcp_email_recipients_per_send` : distribution du nombre de destinataires.
-- `email_mcp_email_attachments_per_send` : distribution du nombre de pieces jointes.
-
-Labels stables :
-
-- `mode`: `smtp`, `mock` ou `unknown`.
+- `mode`: `smtp`, `mock`, `unknown`.
 - `result`: `success`, `config_error`, `validation_error`, `smtp_error`, `network_error`, `unexpected_error`.
 
-Les metrics n'utilisent pas les adresses email, les domaines, les sujets, les contenus, ni les noms de pieces jointes comme labels afin d'eviter la fuite de donnees sensibles et la haute cardinalite.
-
-## MailDev
-
-Le service `maildev` est configure par variables `MAILDEV_*` :
-
-- `MAILDEV_SMTP_PORT=1025`
-- `MAILDEV_WEB_PORT=1080`
-- `MAILDEV_IP=0.0.0.0`
-- `MAILDEV_WEB_IP=0.0.0.0`
-
-Documentation MailDev : <https://maildev.github.io/maildev/>
+Metrics avoid email addresses, domains, subjects, content, and attachment names as labels to prevent sensitive data leaks and high cardinality.

@@ -1,14 +1,14 @@
 # Architecture
 
-Ce document decrit l'architecture du serveur Email MCP, ses responsabilites internes et le flux d'execution d'un appel `send_email`.
+This document describes the Email MCP Server architecture, internal responsibilities, and execution flow for `send_email`.
 
-## Vue d'ensemble
+## Overview
 
-Le service expose un serveur MCP HTTP avec FastMCP. Le meme serveur HTTP expose aussi `/metrics` pour Prometheus et `/health` pour verifier la connectivite SMTP. L'endpoint MCP peut etre protege par auth bearer optionnelle via `MCP_BEARER_TOKEN`. L'envoi email est configure uniquement par variables d'environnement et peut cibler MailDev en local, un SMTP reel, ou le mock mode.
+The service exposes an HTTP MCP server powered by FastMCP. The same HTTP process also exposes `/metrics` for Prometheus and `/health` for SMTP connectivity checks. The MCP endpoint can be protected with optional bearer authentication through `MCP_BEARER_TOKEN`. Email delivery is configured entirely through environment variables and can target MailDev locally, a real SMTP server, or mock mode.
 
 ```mermaid
 flowchart LR
-    Client["Client MCP"] -->|HTTP /mcp + bearer optionnel| FastMCP["FastMCP server"]
+    Client["MCP client"] -->|HTTP /mcp + optional bearer| FastMCP["FastMCP server"]
     Prometheus["Prometheus"] -->|GET /metrics| Metrics["Metrics endpoint"]
     Probe["OpenShift probe"] -->|GET /health| Health["SMTP health check"]
     FastMCP --> Workflow["send_email workflow"]
@@ -28,70 +28,70 @@ flowchart LR
 
 ```text
 src/email_mcp/
-├── config/          # Chargement, parsing et validation des variables d'environnement
-├── email/           # Validation email, construction MIME, pieces jointes, SMTP
-├── mcp/             # Serveur FastMCP, route /metrics, workflow, progress/logging
-├── observability/   # Definition et exposition des metrics Prometheus
-└── server.py        # Wrapper stable pour fastmcp inspect/run
+|-- config/          # Environment loading, parsing, and validation
+|-- email/           # Email validation, MIME building, attachments, SMTP
+|-- mcp/             # FastMCP server, auth, routes, workflow, progress/logging
+|-- observability/   # Prometheus metric definitions and rendering
+`-- server.py        # Stable wrapper for fastmcp inspect/run
 ```
 
-Responsabilites principales :
+Main responsibilities:
 
-- `config`: transforme `os.environ` en objets `Settings` et `ServerSettings`, valide les booleens, ports, log level, TLS/SSL et regex.
-- `email`: parse les destinataires, applique l'allowlist de domaines, construit l'objet `EmailMessage`, decode les pieces jointes base64 et livre via SMTP.
-- `mcp`: configure l'auth bearer optionnelle, expose les outils `send_email` et `test_smtp_connection`, gere `ctx.report_progress`, les logs client FastMCP et l'orchestration d'envoi.
-- `observability`: declare les compteurs et histogrammes Prometheus, puis rend le payload texte de `/metrics`.
+- `config`: converts `os.environ` into `Settings` and `ServerSettings`, then validates booleans, ports, log level, TLS/SSL exclusivity, bearer auth, and regex values.
+- `email`: parses recipients, applies the domain allowlist, builds the `EmailMessage`, decodes base64 attachments, and delivers through SMTP.
+- `mcp`: configures optional bearer auth, exposes `send_email` and `test_smtp_connection`, handles `ctx.report_progress`, sends FastMCP client logs, and orchestrates delivery.
+- `observability`: declares Prometheus counters and histograms, then renders the text payload for `/metrics`.
 
-## Auth bearer MCP
+## MCP Bearer Auth
 
-Si `MCP_BEARER_TOKEN` est vide ou absent, FastMCP est cree sans fournisseur d'authentification et `/mcp` reste ouvert.
+If `MCP_BEARER_TOKEN` is empty or missing, FastMCP is created without an auth provider and `/mcp` remains open.
 
-Si `MCP_BEARER_TOKEN` est defini, le serveur FastMCP utilise un provider bearer local avec comparaison constant-time et exige l'en-tete suivant sur l'endpoint MCP HTTP :
+If `MCP_BEARER_TOKEN` is set, FastMCP uses a local bearer provider with constant-time comparison and requires this header on the MCP HTTP endpoint:
 
 ```http
 Authorization: Bearer <MCP_BEARER_TOKEN>
 ```
 
-Cette protection s'applique au transport MCP (`/mcp`). Les endpoints operationnels `/health` et `/metrics` restent publics pour les probes Kubernetes/OpenShift et le scraping Prometheus.
+This protection applies to the MCP transport (`/mcp`). Operational endpoints `/health` and `/metrics` stay public for Kubernetes/OpenShift probes and Prometheus scraping.
 
-## Flux `send_email`
+## `send_email` Flow
 
-1. Le client MCP appelle `send_email` avec `to`, `subject`, `text`, et les champs optionnels.
-2. Le serveur charge la configuration email depuis les variables d'environnement.
-3. Le workflow enregistre une tentative Prometheus et emet le premier progress event.
-4. Les destinataires `to`, `cc`, `bcc` sont parses et valides.
-5. Si `ALLOWED_RECIPIENT_DOMAIN_REGEX` est defini, chaque domaine destinataire doit matcher la regex avec `fullmatch`.
-6. Le message MIME est construit avec texte, HTML optionnel, `Reply-To`, `Cc`, et pieces jointes.
-7. Si `EMAIL_MOCK_MODE=true`, le workflow retourne un succes mocke sans ouvrir de connexion SMTP.
-8. Sinon, le message est envoye au serveur SMTP configure.
-9. Le workflow enregistre le resultat Prometheus, emet les logs FastMCP et retourne `{ ok, message_id, accepted_recipients, mock }`.
+1. The MCP client calls `send_email` with `to`, `subject`, `text`, and optional fields.
+2. The server loads email settings from environment variables.
+3. The workflow records a Prometheus attempt and emits the first progress event.
+4. `to`, `cc`, and `bcc` recipients are parsed and validated.
+5. If `ALLOWED_RECIPIENT_DOMAIN_REGEX` is set, every recipient domain must match with `fullmatch`.
+6. The MIME message is built with plain text, optional HTML, `Reply-To`, `Cc`, and attachments.
+7. If `EMAIL_MOCK_MODE=true`, the workflow returns a mock success without opening an SMTP connection.
+8. Otherwise, the message is sent to the configured SMTP server.
+9. The workflow records the Prometheus outcome, emits FastMCP logs, and returns `{ ok, message_id, accepted_recipients, mock }`.
 
-## Flux `test_smtp_connection` et `/health`
+## `test_smtp_connection` And `/health` Flow
 
-L'outil MCP `test_smtp_connection` et l'endpoint HTTP `/health` executent la meme verification :
+The `test_smtp_connection` MCP tool and `/health` HTTP endpoint run the same check:
 
-1. Charger et valider la configuration SMTP.
-2. Ouvrir une connexion SMTP ou SMTP SSL.
-3. Executer STARTTLS si `SMTP_USE_TLS=true`.
-4. Executer un login si `SMTP_USERNAME` est configure.
-5. Envoyer `NOOP`.
-6. Retourner un payload JSON non sensible.
+1. Load and validate SMTP settings.
+2. Open an SMTP or SMTP SSL connection.
+3. Run STARTTLS if `SMTP_USE_TLS=true`.
+4. Log in if `SMTP_USERNAME` is configured.
+5. Send `NOOP`.
+6. Return a non-sensitive JSON payload.
 
-`/health` retourne `200` si le test reussit et `503` si la configuration ou la connexion SMTP echoue. Le mock mode ne court-circuite pas ce test, car son objectif est de valider l'accessibilite du serveur SMTP configure.
+`/health` returns `200` when the check succeeds and `503` when configuration or SMTP connectivity fails. Mock mode does not bypass this check because the endpoint is meant to validate access to the configured SMTP server.
 
-## Securite et confidentialite
+## Security And Privacy
 
-- `bcc` est uniquement utilise dans l'enveloppe SMTP et n'est jamais ajoute aux headers MIME.
-- Les logs FastMCP et Python ne contiennent pas `SMTP_PASSWORD`, `MCP_BEARER_TOKEN`, corps email, contenu base64, sujet comme label metric, ni nom de piece jointe comme label metric.
-- Les labels Prometheus restent a faible cardinalite : `mode` et `result`.
-- L'image Docker s'execute en non-root avec `appuser` UID/GID `1000`.
-- Docker Compose active `read_only: true`, `cap_drop: ALL`, `no-new-privileges:true` et un `tmpfs` sur `/tmp`.
+- `bcc` is used only in the SMTP envelope and is never added to MIME headers.
+- FastMCP and Python logs do not include `SMTP_PASSWORD`, `MCP_BEARER_TOKEN`, email bodies, base64 content, metric labels based on subjects, or attachment names.
+- Prometheus labels stay low-cardinality: `mode` and `result`.
+- The Docker image runs as non-root `appuser` with UID/GID `1000`.
+- Docker Compose enables `read_only: true`, `cap_drop: ALL`, `no-new-privileges:true`, and a `/tmp` tmpfs mount.
 
 ## OpenShift
 
-Le service est prepare pour un deploiement OpenShift avec Docker Compose ou Helm. Le chart Kubernetes se trouve dans `charts/email-mcp` et sa documentation est dans `docs/helm.md`.
+The service is prepared for OpenShift deployment with Docker Compose parity and a Helm chart. The Kubernetes chart is in `charts/email-mcp` and its documentation is in `docs/helm.md`.
 
-Le runtime attendu utilise :
+The expected runtime uses:
 
 - `runAsNonRoot: true`
 - `runAsUser: 1000`
@@ -99,19 +99,19 @@ Le runtime attendu utilise :
 - `readOnlyRootFilesystem: true`
 - `allowPrivilegeEscalation: false`
 - `capabilities.drop: ["ALL"]`
-- volume temporaire monte sur `/tmp`
+- temporary volume mounted on `/tmp`
 
-Si le cluster impose un UID aleatoire via une SCC restrictive, il faudra soit ajuster la SCC, soit faire evoluer l'image pour supporter un UID arbitraire au lieu de la contrainte explicite `appuser` UID `1000`.
+If the cluster enforces arbitrary UIDs through a restrictive SCC, either adjust the SCC or evolve the image to support arbitrary UIDs instead of the explicit `appuser` UID `1000` constraint.
 
-## Metrics Prometheus
+## Prometheus Metrics
 
-Endpoint :
+Endpoint:
 
 ```text
 GET /metrics
 ```
 
-Metrics metier :
+Business metrics:
 
 - `email_mcp_email_send_attempts_total`
 - `email_mcp_email_send_results_total`
@@ -119,14 +119,14 @@ Metrics metier :
 - `email_mcp_email_recipients_per_send`
 - `email_mcp_email_attachments_per_send`
 
-Labels :
+Labels:
 
 - `mode`: `smtp`, `mock`, `unknown`
 - `result`: `success`, `config_error`, `validation_error`, `smtp_error`, `network_error`, `unexpected_error`
 
-## Decisions techniques
+## Technical Decisions
 
-- Le transport principal est HTTP pour faciliter Docker Compose, OpenShift et Prometheus.
-- Le mock mode garde toutes les validations actives afin de tester les politiques sans effet SMTP.
-- La regex d'allowlist s'applique aux domaines des destinataires d'enveloppe (`to`, `cc`, `bcc`), pas a `reply_to` ni `SMTP_FROM`.
-- Le runtime Docker utilise l'entree `/app/.venv/bin/email-mcp` directement, sans `uv run`, pour eviter des ecritures ou resolutions inutiles au demarrage.
+- HTTP is the primary transport to support Docker Compose, OpenShift, and Prometheus.
+- Mock mode keeps all validations active so policies can be tested without SMTP side effects.
+- The domain allowlist regex applies to SMTP envelope recipients (`to`, `cc`, `bcc`), not to `reply_to` or `SMTP_FROM`.
+- The Docker runtime calls `/app/.venv/bin/email-mcp` directly, without `uv run`, to avoid unnecessary startup writes or dependency resolution.

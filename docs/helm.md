@@ -1,8 +1,8 @@
-# Deploiement Helm
+# Helm Deployment
 
-Le chart Helm se trouve dans `charts/email-mcp`. Il deploie une instance unique du serveur Email MCP pour Kubernetes ou OpenShift.
+The Helm chart is located in `charts/email-mcp`. It deploys a single Email MCP Server instance for Kubernetes or OpenShift.
 
-## Installation minimale
+## Minimal Installation
 
 ```bash
 helm install email-mcp ./charts/email-mcp \
@@ -10,18 +10,18 @@ helm install email-mcp ./charts/email-mcp \
   --set image.tag=0.1.0
 ```
 
-Par defaut, le chart cree :
+By default, the chart creates:
 
-- un `Deployment` avec `replicaCount: 1`
-- un `Service` `ClusterIP`
-- un `ConfigMap` pour la configuration non sensible
-- un `Secret` pour `SMTP_USERNAME`, `SMTP_PASSWORD` et `MCP_BEARER_TOKEN`
-- un `ServiceAccount`
-- un volume `emptyDir` monte sur `/tmp`
+- a `Deployment` with `replicaCount: 1`
+- a `ClusterIP` `Service`
+- a `ConfigMap` for non-sensitive configuration
+- a `Secret` for `SMTP_USERNAME`, `SMTP_PASSWORD`, and `MCP_BEARER_TOKEN`
+- a `ServiceAccount`
+- an `emptyDir` volume mounted on `/tmp`
 
 ## Ingress
 
-Activer l'Ingress :
+Enable Ingress:
 
 ```bash
 helm upgrade --install email-mcp ./charts/email-mcp \
@@ -32,13 +32,13 @@ helm upgrade --install email-mcp ./charts/email-mcp \
   --set ingress.hosts[0].host=email-mcp.example.com
 ```
 
-Endpoints exposes via l'Ingress :
+Endpoints exposed through Ingress:
 
 - `/mcp`
 - `/health`
 - `/metrics`
 
-Exemple TLS dans `values.yaml` :
+TLS example in `values.yaml`:
 
 ```yaml
 ingress:
@@ -55,9 +55,9 @@ ingress:
         - email-mcp.example.com
 ```
 
-## Configuration SMTP
+## SMTP Configuration
 
-Les valeurs sensibles peuvent etre definies directement dans `values.yaml` pour un environnement de test :
+Sensitive values can be defined directly in `values.yaml` for a local or test environment:
 
 ```yaml
 smtp:
@@ -71,7 +71,7 @@ smtp:
   password: "change-me"
 ```
 
-Pour un environnement partage ou production, preferer un Secret Kubernetes existant :
+For shared or production environments, prefer an existing Kubernetes Secret:
 
 ```yaml
 secret:
@@ -82,7 +82,7 @@ secret:
   bearerTokenKey: MCP_BEARER_TOKEN
 ```
 
-Le secret existant doit contenir :
+The existing Secret must contain:
 
 ```yaml
 apiVersion: v1
@@ -96,20 +96,20 @@ stringData:
   MCP_BEARER_TOKEN: ""
 ```
 
-## Auth bearer MCP
+## MCP Bearer Auth
 
-L'auth bearer est optionnelle. Si `auth.bearerToken` est vide, l'endpoint MCP `/mcp` reste accessible sans token.
+Bearer authentication is optional. If `auth.bearerToken` is empty, the MCP endpoint `/mcp` is available without a token.
 
-Pour l'activer avec un secret cree par le chart :
+Enable it with a chart-managed Secret:
 
 ```yaml
 auth:
   bearerToken: "change-me"
 ```
 
-Le chart expose cette valeur dans le conteneur via la variable `MCP_BEARER_TOKEN`.
+The chart exposes this value to the container through the `MCP_BEARER_TOKEN` environment variable.
 
-Avec un Secret existant, ajoute la cle `MCP_BEARER_TOKEN` et conserve `secret.create=false` :
+With an existing Secret, add the `MCP_BEARER_TOKEN` key and keep `secret.create=false`:
 
 ```yaml
 secret:
@@ -120,9 +120,9 @@ secret:
   bearerTokenKey: MCP_BEARER_TOKEN
 ```
 
-Les endpoints `/health` et `/metrics` restent non proteges pour les probes et Prometheus.
+The `/health` and `/metrics` endpoints remain unauthenticated for probes and Prometheus.
 
-## Mock mode et allowlist
+## Mock Mode And Allowlist
 
 ```yaml
 config:
@@ -130,11 +130,11 @@ config:
   allowedRecipientDomainRegex: "^(example\\.com|.+\\.example\\.org)$"
 ```
 
-Le mock mode valide la requete sans envoyer d'email. L'allowlist continue de s'appliquer.
+Mock mode validates the request without sending email. The allowlist still applies.
 
 ## Resources
 
-Le chart definit des requests et limits par defaut :
+The chart defines default requests and limits:
 
 ```yaml
 resources:
@@ -146,11 +146,11 @@ resources:
     memory: 512Mi
 ```
 
-Ces valeurs peuvent etre surchargees selon la charge attendue.
+Override these values according to expected load.
 
-## Securite runtime
+## Runtime Security
 
-Le chart reprend les contraintes du conteneur rootless :
+The chart mirrors the rootless container constraints:
 
 ```yaml
 podSecurityContext:
@@ -169,14 +169,14 @@ securityContext:
       - ALL
 ```
 
-`/tmp` est monte via `emptyDir`, ce qui permet de garder le filesystem racine en lecture seule.
+`/tmp` is mounted through `emptyDir`, which allows the root filesystem to remain read-only.
 
 ## Probes
 
-- `readinessProbe`: HTTP `GET /health`, donc verifie la connectivite SMTP.
-- `livenessProbe`: TCP sur le port HTTP, pour eviter de redemarrer le Pod si le SMTP externe est temporairement indisponible.
+- `readinessProbe`: HTTP `GET /health`, so it validates SMTP connectivity.
+- `livenessProbe`: TCP on the HTTP port, so the Pod is not restarted when an external SMTP service is temporarily unavailable.
 
-## Validation locale du chart
+## Local Chart Validation
 
 ```bash
 helm lint charts/email-mcp
